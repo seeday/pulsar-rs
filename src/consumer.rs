@@ -810,6 +810,11 @@ impl<Exe: Executor> ConsumerEngine<Exe> {
             }
 
             if self.remaining_messages < self.batch_size / 2 {
+                // I think there's something funky in the flow logic, or my network is super slow??
+                //eprintln!(
+                //    "sending flow of {}",
+                //    self.batch_size - self.remaining_messages
+                //);
                 match self
                     .connection
                     .sender()
@@ -869,13 +874,17 @@ impl<Exe: Executor> ConsumerEngine<Exe> {
                             //return Err(Error::Consumer(ConsumerError::Connection(ConnectionError::Disconnected)).into());
                         }
                         Some(message) => {
-                            self.remaining_messages -= message
+                            let rem = message
                                 .payload
                                 .as_ref()
                                 .and_then(|payload| payload.metadata.num_messages_in_batch)
-                                .unwrap_or(1i32)
-                                as u32;
-
+                                .unwrap_or(1i32) as u32;
+                            //eprintln!(
+                            //    "wanting to subtract {} from remaining {} messages.",
+                            //    rem, self.remaining_messages
+                            //);
+                            //self.remaining_messages -= rem;
+                            self.remaining_messages = self.remaining_messages.saturating_sub(rem);
                             match self.process_message(message).await {
                                 // Continue
                                 Ok(true) => {}
@@ -1258,7 +1267,10 @@ impl<Exe: Executor> ConsumerEngine<Exe> {
             // if we receive a message, it indicates we want to stop this task
             if _res.is_err() {
                 if let Err(e) = conn.sender().close_consumer(id).await {
-                    error!("could not close consumer {:?}({}) for topic {}: {:?}", name, id, topic, e);
+                    error!(
+                        "could not close consumer {:?}({}) for topic {}: {:?}",
+                        name, id, topic, e
+                    );
                 }
             }
         }));
